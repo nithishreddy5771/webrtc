@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <!-- <link rel="stylesheet" href="./style.css"> -->
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- CSS only -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-wEmeIV1mKuiNpC+IOBjI7aAzPcEZeedi5yW5f2yOq55WWLwNGmvvx4Um1vskeMj0" crossorigin="anonymous">
+    <title>Remote</title>
+</head>
+
+<body>
+    <div class="container">
+        <div class="row text-center mt-4 mb-2">
+            <h3>Video Call via WebRTC [Receiver]</h3>
+          </div>
+        <div class="input-group mt-3">
+            <input placeholder="Enter Room Name or number" type="text" id="room_input" class="form-control" aria-label="Enter room name or number" aria-describedby="basic-addon2" >
+            <div class="input-group-append">
+              <button class="btn btn-outline-success" type="button" onclick="joinCall()">Send Room Details</button>
+            </div>
+          </div>
+    
+        
+        <div id="video-call-div">
+            <div class="p-2 shadow text-center mt-4 mb-2">
+                <h5 class=""><strong>ME</strong></h5>
+              </div>
+            <div class="text-center">
+                <video class="mx-auto my-2" muted id="local-video" autoplay></video>
+            </div>
+            <div class="my-4 text-center">
+                <button class="btn btn-danger" onclick="muteVideo()">Mute Video</button>
+                <button class="btn btn-danger" onclick="muteAudio()">Mute Audio</button>
+            </div>
+
+            <div class="p-2 shadow text-center mt-4 mb-2">
+                <h5 class=""><strong>REMOTE</strong></h5>
+              </div>
+            <div class="text-center">
+                <video class="mx-auto my-2" id="remote-video" autoplay></video>
+            </div>
+        </div>
+    </div>
+    <!-- JavaScript Bundle with Popper -->
+    <scrip src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-p34f1UUtsS3wqzfto5wAAmdvj+osOnFyQFpp4Ua3gs/ZVWx6oOypYoCJhGGScy+8" crossorigin="anonymous">
+    </scrip>
+    
+    
+    
+    
+    
+    
+    
+    <script>
+// Variables
+// Socket connection
+const webSocket = new WebSocket("wss://webrtc-rtos.ddns.net/")
+var local_stream_video
+var rtc_peer_connection
+var room_input
+var audio_disable = true
+var video_disable = true
+
+// -----------------------------------------------------------
+
+webSocket.onmessage = (event) => {
+    handleSignallingData(JSON.parse(event.data))
+}
+
+function handleSignallingData(data) {
+    switch (data.type) {
+        case "offer":
+            rtc_peer_connection.setRemoteDescription(data.offer)
+            offer_functionality()
+            break
+        case "candidate":
+            rtc_peer_connection.addIceCandidate(data.candidate)
+    }
+}
+
+// --------------------------------------------------------
+
+// Common functions
+function offer_functionality () {
+    rtc_peer_connection.createAnswer((answer) => {
+        rtc_peer_connection.setLocalDescription(answer)
+        send_data_to_server({
+            type: "send_answer",
+            answer: answer,
+            number: 1
+        })
+    }, error => {
+        console.log(error)
+    })
+}
+
+function send_data_to_server(data) {
+    data.room_input = room_input
+    webSocket.send(JSON.stringify(data))
+}
+
+// Audio and Video Settings
+function muteAudio() {
+    audio_disable = !audio_disable
+    local_stream_video.getAudioTracks()[0].enabled = audio_disable
+}
+
+function muteVideo() {
+    video_disable = !video_disable
+    local_stream_video.getVideoTracks()[0].enabled = video_disable
+}
+
+// ----------------------------------------------------------
+
+function joinCall() {
+    // Geting room_input and display block
+    room_input = document.getElementById("room_input").value
+
+    document.getElementById("video-call-div")
+    .style.display = "inline"
+
+    // Get the media details
+    navigator.getUserMedia({
+        audio: true,
+        video: true
+    }, (stream) => {
+        local_stream_video = stream
+        document.getElementById("local-video").srcObject = local_stream_video
+
+        let webrtc_config = {
+            iceServers: [
+                {
+                    "urls": ["stun:stun.l.google.com:19302", 
+                    "stun:stun1.l.google.com:19302", 
+                    "stun:stun2.l.google.com:19302"]
+                }
+            ]
+        }
+
+        rtc_peer_connection = new RTCPeerConnection(webrtc_config)
+        rtc_peer_connection.addStream(local_stream_video)
+
+        rtc_peer_connection.onaddstream = (e) => {
+            document.getElementById("remote-video")
+            .srcObject = e.stream
+        }
+
+        rtc_peer_connection.onicecandidate = ((e) => {
+            if (e.candidate == null)
+                return
+            
+            send_data_to_server({
+                type: "send_candidate",
+                candidate: e.candidate
+            })
+        })
+
+        send_data_to_server({
+            type: "join_call"
+        })
+
+    }, (error) => {
+        console.log(error)
+    })
+}
+    </script>
+</body>
+
+</html>
